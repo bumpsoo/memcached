@@ -20,6 +20,7 @@
 #include <assert.h>
 #include <unistd.h>
 #include <poll.h>
+#include <stdatomic.h>
 
 /* Forward Declarations */
 static void item_link_q(item *it);
@@ -59,11 +60,10 @@ static unsigned int sizes[LARGEST_ID];
 static uint64_t sizes_bytes[LARGEST_ID];
 static unsigned int *stats_sizes_hist = NULL;
 static int stats_sizes_buckets = 0;
-static uint64_t cas_id = 1;
+static _Atomic uint64_t cas_id = 1;
 
 static volatile int do_run_lru_maintainer_thread = 0;
 static pthread_mutex_t lru_maintainer_lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_mutex_t cas_id_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void item_stats_reset(void) {
     int i;
@@ -105,18 +105,12 @@ static bool lru_bump_async(lru_bump_buf *b, item *it, uint32_t hv);
 static uint64_t lru_total_bumps_dropped(void);
 
 /* Get the next CAS id for a new item. */
-/* TODO: refactor some atomics for this. */
 uint64_t get_cas_id(void) {
-    pthread_mutex_lock(&cas_id_lock);
-    uint64_t next_id = ++cas_id;
-    pthread_mutex_unlock(&cas_id_lock);
-    return next_id;
+    return atomic_fetch_add(&cas_id, 1);
 }
 
 void set_cas_id(uint64_t new_cas) {
-    pthread_mutex_lock(&cas_id_lock);
-    cas_id = new_cas;
-    pthread_mutex_unlock(&cas_id_lock);
+    atomic_store(&cas_id, new_cas);
 }
 
 int item_is_flushed(item *it) {
